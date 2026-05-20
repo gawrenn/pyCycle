@@ -115,8 +115,8 @@ class ThermoAdd(om.ExplicitComponent):
 
                 W_air_mix = W_air_in # for reactant mode, we reference from the incoming air
                 W_other_mix = W_air_mix * ratio
-                outputs[f'{mix_name}:W'] = W_other_mix[0]
-                W_other_out[self.idx_compo] += W_other_mix[0]
+                outputs[f'{mix_name}:W'] = W_other_mix.item()
+                W_other_out[self.idx_compo] += W_other_mix.item()
                 W_out += W_other_mix
                 W_times_h += W_other_mix*inputs[f'{mix_name}:h']
 
