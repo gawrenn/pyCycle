@@ -2,6 +2,8 @@ import sys
 
 import numpy as np
 
+import openmdao.api as om
+
 # protection incase env doesn't have matplotlib installed, since its not strictly required
 try:
     import matplotlib
@@ -306,6 +308,74 @@ def print_mixer(prob, element_names, file=sys.stdout):
                                    prob[e_name+'.Fl_I2_calc:stat:MN'][0]),
                                    prob[e_name+'.ER',][0],
                   file=file, flush=True)
+
+
+def print_balances(prob, pt, file=sys.stdout):
+    """
+    Print all balance components and their state variables for a cycle point.
+
+    Parameters
+    ----------
+    prob : om.Problem
+        OpenMDAO problem containing the pyCycle model.
+    pt : str
+        Name of the cycle point to inspect.
+    file : file-like
+        Output file stream. Default is sys.stdout.
+    """
+    root = prob.model._get_subsystem(pt)
+    if root is None:
+        print(f"Cycle point '{pt}' not found.", file=file, flush=True)
+        return
+
+    # Find all BalanceComp instances using OpenMDAO's system_iter with type filter
+    balance_comps = list(root.system_iter(include_self=True, recurse=True, typ=om.BalanceComp))
+
+    if not balance_comps:
+        print("No balance components found.", file=file, flush=True)
+        return
+
+    len_header = 120
+    print("-" * len_header, file=file, flush=True)
+    print("                                        BALANCE COMPONENTS", file=file, flush=True)
+    print("-" * len_header, file=file, flush=True)
+
+    for bal_comp in balance_comps:
+        print(f"\n  {bal_comp.pathname}", file=file, flush=True)
+        print("  " + "-" * 95, file=file, flush=True)
+
+        # Access balance metadata from _state_vars
+        if hasattr(bal_comp, '_state_vars') and bal_comp._state_vars:
+            line_tmpl = '    {:<15} | {:>10} | {:>10} | {:>16} | {:>16} | {:>14} | {:>14}'
+            print(line_tmpl.format('Name', 'Units', 'Eq Units', 'LHS', 'RHS', 'Value', 'Residual'),
+                  file=file, flush=True)
+            print("    " + "-" * 91, file=file, flush=True)
+
+            for var_name, var_info in bal_comp._state_vars.items():
+                units = var_info.get('units') or 'None'
+                eq_units = var_info.get('eq_units') or 'None'
+                lhs_name = var_info.get('lhs_name', f'lhs:{var_name}')
+                rhs_name = var_info.get('rhs_name', f'rhs:{var_name}')
+
+                # Get current value
+                try:
+                    val = prob.get_val(f'{bal_comp.pathname}.{var_name}')[0]
+                    val_str = f'{val:.6g}'
+                except Exception:
+                    val_str = 'N/A'
+
+                # Get residual value
+                try:
+                    resid = prob.model._residuals[f'{bal_comp.pathname}.{var_name}'][0]
+                    resid_str = f'{resid:.6g}'
+                except Exception:
+                    resid_str = 'N/A'
+
+                print(line_tmpl.format(var_name, str(units), str(eq_units),
+                                       lhs_name, rhs_name, val_str, resid_str),
+                      file=file, flush=True)
+
+    print("-" * len_header, file=file, flush=True)
 
 
 def plot_compressor_maps(prob, element_names, eff_vals=np.array([0,0.5,0.55,0.6,0.65,0.7,0.75,0.8,0.85,0.9,0.95,1.0]),alphas=[0]):

@@ -11,11 +11,11 @@ class Turbojet(pyc.Cycle):
 
         USE_TABULAR = True
 
-        if USE_TABULAR: 
+        if USE_TABULAR:
             self.options['thermo_method'] = 'TABULAR'
             self.options['thermo_data'] = pyc.AIR_JETA_TAB_SPEC
             FUEL_TYPE = "FAR"
-        else: 
+        else:
             self.options['thermo_method'] = 'CEA'
             self.options['thermo_data'] = pyc.species_data.janaf
             FUEL_TYPE = "Jet-A(g)"
@@ -86,7 +86,7 @@ class Turbojet(pyc.Cycle):
             self.connect('balance.W', 'inlet.Fl_I:stat:W')
             self.connect('nozz.Throat:stat:area', 'balance.lhs:W')
 
-       
+
         newton = self.nonlinear_solver = om.NewtonSolver()
         newton.options['atol'] = 1e-6
         newton.options['rtol'] = 1e-6
@@ -95,7 +95,7 @@ class Turbojet(pyc.Cycle):
         newton.options['solve_subsystems'] = True
         newton.options['max_sub_solves'] = 100
         newton.options['reraise_child_analysiserror'] = False
-        
+
         self.linear_solver = om.DirectSolver()
 
         super().setup()
@@ -105,7 +105,7 @@ def viewer(prob, pt, file=sys.stdout):
     print a report of all the relevant cycle properties
     """
 
-    summary_data = (prob[pt+'.fc.Fl_O:stat:MN'], prob[pt+'.fc.alt'], prob[pt+'.inlet.Fl_O:stat:W'], 
+    summary_data = (prob[pt+'.fc.Fl_O:stat:MN'], prob[pt+'.fc.alt'], prob[pt+'.inlet.Fl_O:stat:W'],
                     prob[pt+'.perf.Fn'], prob[pt+'.perf.Fg'], prob[pt+'.inlet.F_ram'],
                     prob[pt+'.perf.OPR'], prob[pt+'.perf.TSFC'])
 
@@ -143,6 +143,8 @@ def viewer(prob, pt, file=sys.stdout):
     shaft_full_names = [f'{pt}.{s}' for s in shaft_names]
     pyc.print_shaft(prob, shaft_full_names, file=file)
 
+    pyc.print_balances(prob, pt, file=file)
+
 def map_plots(prob, pt):
     comp_names = ['comp']
     comp_full_names = [f'{pt}.{c}' for c in comp_names]
@@ -170,7 +172,7 @@ class MPTurbojet(pyc.MPCycle):
         self.pyc_add_cycle_param('burner.dPqP', 0.03)
         self.pyc_add_cycle_param('nozz.Cv', 0.99)
 
-        
+
         # define the off-design conditions we want to run
         self.od_pts = ['OD0', 'OD1']
         self.od_MNs = [0.000001, 0.2]
@@ -182,7 +184,7 @@ class MPTurbojet(pyc.MPCycle):
 
             self.set_input_defaults(pt+'.fc.MN', val=self.od_MNs[i])
             self.set_input_defaults(pt+'.fc.alt', self.od_alts[i], units='ft')
-            self.set_input_defaults(pt+'.balance.Fn_target', self.od_Fns[i], units='lbf')  
+            self.set_input_defaults(pt+'.balance.Fn_target', self.od_Fns[i], units='lbf')
 
         self.pyc_use_default_des_od_conns()
 
@@ -207,8 +209,8 @@ if __name__ == "__main__":
     prob.set_val('DESIGN.fc.alt', 0, units='ft')
     prob.set_val('DESIGN.fc.MN', 0.000001)
     prob.set_val('DESIGN.balance.Fn_target', 11800.0, units='lbf')
-    prob.set_val('DESIGN.balance.T4_target', 2370.0, units='degR') 
-    prob.set_val('DESIGN.comp.PR', 13.5) 
+    prob.set_val('DESIGN.balance.T4_target', 2370.0, units='degR')
+    prob.set_val('DESIGN.comp.PR', 13.5)
     prob.set_val('DESIGN.comp.eff', 0.83)
     prob.set_val('DESIGN.turb.eff', 0.86)
 

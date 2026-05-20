@@ -11,77 +11,64 @@ on:
   # Allow running the workflow manually from the Actions tab
   workflow_dispatch:
 
-    inputs:
-
-      run_name:
-        type: string
-        description: 'Name of workflow run as it will appear under Actions tab:'
-        required: false
-        default: ""
-
-      Ubuntu_Baseline:
-        type: boolean
-        description: 'Include Ubuntu Baseline test in the test matrix'
-        required: false
-        default: true
-
-      MacOS_Baseline:
-        type: boolean
-        description: 'Include MacOS Baseline test in the test matrix'
-        required: false
-        default: true
-
-      Windows_Baseline:
-        type: boolean
-        description: 'Include Windows Baseline test in the test matrix'
-        required: false
-        default: true
-
-      OpenMDAO_Dev:
-        type: boolean
-        description: 'Include latest/development test in the test matrix'
-        required: false
-        default: true
-
-run-name:  ${{ inputs.run_name }}
+concurrency:
+  # Cancel any existing CI runs if we push to this branch
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
 
-  tests:
+  test_pycycle:
 
-    timeout-minutes: 120
+    timeout-minutes: 90
 
     strategy:
       fail-fast: false
       matrix:
         include:
+
           # test baseline versions on Ubuntu
           - NAME: Ubuntu Baseline
-            OS: ubuntu-latest
-            PY: '3.12'
-            NUMPY: '1.26'
-            SCIPY: '1.14'
-            OPENMDAO: 'latest'
-            EXCLUDE: ${{ github.event_name == 'workflow_dispatch'  && ! inputs.Ubuntu_Baseline }}
+            OS: ubuntu-24.04
+            OPENMDAO_PIXI_ENVIRONMENT: 'py314'
+            OPENMDAO_INSTALL_FROM: 'pypi'
+            OPENMDAO: ''
+            COVERAGE: true
 
-          # test baseline versions on MacOS
+          # latest versions of openmdao/dymos
           - NAME: MacOS Baseline
             OS: macos-latest
-            PY: '3.12'
-            NUMPY: '1.26'
-            SCIPY: '1.14'
-            OPENMDAO: 'latest'
-            EXCLUDE: ${{ github.event_name == 'workflow_dispatch'  && ! inputs.MacOS_Baseline }}
+            OPENMDAO_PIXI_ENVIRONMENT: 'py314'
+            OPENMDAO_INSTALL_FROM: 'pypi'
+            OPENMDAO: ''
+            COVERAGE: true
+
+          # latest versions of openmdao/dymos
+          # Coverage currently has some problems in windows, according to the openmdao workflows.
+          - NAME: Windows Baseline
+            OS: windows-latest
+            OPENMDAO_PIXI_ENVIRONMENT: 'py314'
+            OPENMDAO_INSTALL_FROM: 'pypi'
+            OPENMDAO: ''
+            COVERAGE: false
+
+          # oldest supported versions of openmdao/dymos
+          # Note: bugfixes sometimes require incrementing the minimal version of openmdao or dymos.
+          - NAME: Ubuntu Oldest
+            OS: ubuntu-24.04
+            OPENMDAO_PIXI_ENVIRONMENT: 'py311'
+            OPENMDAO_INSTALL_FROM: 'pypi'
+            OPENMDAO: '3.41.0'
+            COVERAGE: true
 
           # test with latest/development versions
           # only run when selected via workflow_dispatch
           - NAME: OpenMDAO Dev
-            OS: ubuntu-latest
-            PY: 3
-            NUMPY: 2
-            SCIPY: 1
-            OPENMDAO: 'dev'
-            EXCLUDE: ${{ github.event_name != 'workflow_dispatch' || (github.event_name == 'workflow_dispatch'  && ! inputs.OpenMDAO_Dev) }}
+            OS: ubuntu-24.04
+            OPENMDAO_PIXI_ENVIRONMENT: 'py314'
+            OPENMDAO_INSTALL_FROM: 'github'
+            OPENMDAO: ''
+
 
     runs-on: ${{ matrix.OS }}
 
@@ -100,57 +87,31 @@ jobs:
           echo "Testing: ${GITHUB_REPOSITORY}"
           echo "Triggered by: ${GITHUB_EVENT_NAME}"
           echo "Initiated by: ${GITHUB_ACTOR}"
-          echo "Excluded: ${{ matrix.EXCLUDE }}"
           echo "============================================================="
 
-      - name: Checkout code
-        if: ${{ ! matrix.EXCLUDE }}
-        uses: actions/checkout@v3
+      - name: Checkout Aviary
+        uses: actions/checkout@v6
 
-      - name: Setup conda
-        if: ${{ ! matrix.EXCLUDE }}
-        uses: conda-incubator/setup-miniconda@v3
+      - name: 'Setup OpenMDAO pixi Environment'
+        id: setup_pixi_environment
+        uses: OpenMDAO/OpenMDAO/.github/actions/setup_openmdao_pixi@master
         with:
-          python-version: ${{ matrix.PY }}
-          miniforge-version: "latest"
-
-      - name: Install OpenMDAO
-        if: ${{ ! matrix.EXCLUDE }}
-        shell: bash -l {0}
-        run: |
-          conda install numpy=${{ matrix.NUMPY }} scipy=${{ matrix.SCIPY }} -q -y
-
-          python -m pip install --upgrade pip
-
-          echo "============================================================="
-          echo "Install OpenMDAO"
-          echo "============================================================="
-          if [[ "${{ matrix.OPENMDAO }}" == "dev" ]]; then
-            pip install git+https://github.com/OpenMDAO/OpenMDAO
-          elif [[ "${{ matrix.OPENMDAO }}" == "latest" ]]; then
-            echo "The latest release of OpenMDAO will be installed from pypi per the pyCycle dependency"
-          else
-            pip install openmdao==${{ matrix.OPENMDAO }}
-          fi
+          environment: '${{ matrix.OPENMDAO_PIXI_ENVIRONMENT }}'
+          openmdao_install_from: '${{ matrix.OPENMDAO_INSTALL_FROM }}'
+          openmdao_version: '${{ matrix.OPENMDAO }}'
 
       - name: Install pyCycle
-        if: ${{ ! matrix.EXCLUDE }}
         run: |
+          eval "$(pixi shell-hook -e ${{ matrix.OPENMDAO_PIXI_ENVIRONMENT }} --manifest-path=${{ env.PIXI_MANIFEST }})"
           echo "============================================================="
           echo "Install pyCycle"
           echo "============================================================="
           python -m pip install -e .[all]
 
-      - name: Display environment info
-        if: ${{ ! matrix.EXCLUDE }}
-        run: |
-          conda info
-          conda list
-
       - name: Run tests
-        if: ${{ ! matrix.EXCLUDE }}
         id: run_tests
         run: |
+          eval "$(pixi shell-hook -e ${{ matrix.OPENMDAO_PIXI_ENVIRONMENT }} --manifest-path=${{ env.PIXI_MANIFEST }})"
           echo "============================================================="
           echo "Run tests (from directory other than repo root)"
           echo "============================================================="
@@ -160,10 +121,10 @@ jobs:
           testflo -n 1 pycycle --timeout=240 --show_skipped --deprecations_report=$RPT_FILE --coverage --coverpkg pycycle --durations=20
 
       - name: Deprecations Report
-        if: ${{ ! matrix.EXCLUDE }}
         id: deprecations_report
         continue-on-error: true
         run: |
+          eval "$(pixi shell-hook -e ${{ matrix.OPENMDAO_PIXI_ENVIRONMENT }} --manifest-path=${{ env.PIXI_MANIFEST }})"
           echo "============================================================="
           echo "Display deprecations report"
           echo "============================================================="
@@ -176,8 +137,8 @@ jobs:
           grep '^0 unique deprecation warnings' $RPT_FILE
 
       - name: Check NumPy 2.0 Compatibility
-        if: ${{ ! matrix.EXCLUDE }}
         run: |
+          eval "$(pixi shell-hook -e ${{ matrix.OPENMDAO_PIXI_ENVIRONMENT }} --manifest-path=${{ env.PIXI_MANIFEST }})"
           echo "============================================================="
           echo "Check code for NumPy 2.0 compatibility"
           echo "See: https://numpy.org/devdocs/numpy_2_0_migration_guide.html"
@@ -205,86 +166,4 @@ jobs:
           message: |
             `pyCycle`: Deprecations were detected on `${{ matrix.NAME }}` build.
             ```${{ steps.deprecations_report.outputs.summary }}```
-            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-
-  windows_tests:
-    runs-on: windows-latest
-
-    timeout-minutes: 60
-
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # baseline versions
-          - NAME: Windows Baseline
-            PY: '3.12'
-            NUMPY: '1.26'
-            SCIPY: '1.14'
-            EXCLUDE: ${{ github.event_name == 'workflow_dispatch'  && ! inputs.Windows_Baseline }}
-
-    name: ${{ matrix.NAME }}
-
-    defaults:
-      run:
-        shell: pwsh
-
-    steps:
-      - name: Display run details
-        run: |
-          echo "============================================================="
-          echo "Run #$env:GITHUB_RUN_NUMBER"
-          echo "Run ID: $env:GITHUB_RUN_ID"
-          echo "Testing: $env:GITHUB_REPOSITORY"
-          echo "Triggered by: $env:GITHUB_EVENT_NAME"
-          echo "Initiated by: $env:GITHUB_ACTOR"
-          echo "Excluded: ${{ matrix.EXCLUDE }}"
-          echo "============================================================="
-
-      - name: Checkout code
-        if: ${{ ! matrix.EXCLUDE }}
-        uses: actions/checkout@v3
-
-      - name: Setup conda
-        if: ${{ ! matrix.EXCLUDE }}
-        uses: conda-incubator/setup-miniconda@v3
-        with:
-          python-version: ${{ matrix.PY }}
-          miniforge-version: "latest"
-
-      - name: Install pyCycle
-        if: ${{ ! matrix.EXCLUDE }}
-        run: |
-          conda install numpy=${{ matrix.NUMPY }} scipy=${{ matrix.SCIPY }} -q -y
-
-          python -m pip install --upgrade pip
-
-          echo "============================================================="
-          echo "Install pyCycle"
-          echo "============================================================="
-          python -m pip install -e .[all]
-
-      - name: Display environment info
-        if: ${{ ! matrix.EXCLUDE }}
-        run: |
-          conda info
-          conda list
-
-      - name: Run tests
-        if: ${{ ! matrix.EXCLUDE }}
-        id: run_tests
-        run: |
-          echo "============================================================="
-          echo "Run tests with coverage"
-          echo "============================================================="
-          testflo -n 1 pycycle --timeout=240 --show_skipped --coverage  --coverpkg pycycle --durations=20
-
-      - name: Slack unit test failure
-        if: failure()
-        uses: act10ns/slack@v2.0.0
-        with:
-          webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
-          status: ${{ steps.run_tests.outcome }}
-          message: |
-            `pyCycle`: Unit testing failed on `${{ matrix.NAME }}` build.
             ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

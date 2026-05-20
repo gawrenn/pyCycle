@@ -60,7 +60,7 @@ class PropsCalcs(ExplicitComponent):
 
         nj = inputs['n'][:num_prod]
         # nj[nj<0] = 1e-10 # ensure all concentrations stay non-zero
-        n_moles = inputs['n_moles']
+        n_moles = inputs['n_moles'][0]
 
         self.dlnVqdlnP = dlnVqdlnP = -1 + inputs['result_P'][num_element]
         self.dlnVqdlnT = dlnVqdlnT = 1 - result_T[num_element]
@@ -109,7 +109,7 @@ class PropsCalcs(ExplicitComponent):
         T = inputs['T']
         P = inputs['P']
         nj = inputs['n']
-        n_moles = inputs['n_moles']
+        n_moles = inputs['n_moles'][0]
         result_T = inputs['result_T']
         result_T_last = result_T[num_element]
         result_T_rest = result_T[:num_element]
